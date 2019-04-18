@@ -8,6 +8,7 @@ from datetime import timezone
 from elasticsearch import Elasticsearch
 import pythonwhois
 from time import sleep
+from confluent_kafka import Consumer
 
 
 logging.basicConfig(filename='log/dnslog.log', level=logging.ERROR, 
@@ -23,6 +24,45 @@ with open('config.json') as f:
 def utc_to_local(utc_dt):
     return utc_dt.replace(tzinfo=timezone.utc).astimezone(tz=None)
 
+
+def Main():
+    consumer = Consumer({
+    'bootstrap.servers': '192.168.100.80:9092',
+    'group.id': 'dns',
+    'client.id': 'sslcheck',
+    'enable.auto.commit': True,
+    'auto.commit.interval.ms': 1000,
+    'session.timeout.ms': 6000,
+        'default.topic.config': {'auto.offset.reset': 'latest'}})
+    consumer.subscribe(['domaindetails'])
+    try:
+        while True:
+            msg = consumer.poll(0.1)
+            if msg is None:
+                continue
+            elif not msg.error():
+                try:
+                    print('Received message: {0}'.format(msg.value()))
+                    d=json.loads(msg.value())
+                    print (d)
+                    if d["featureConfig"]["domainMonitor"] == True:
+                        print("true")
+                        run((d["domainId"],d["companyDomain"]))
+                    else:
+                        pass
+                    #elif d["job"] == "single":
+                        #run((d["id"],d["domain"]))
+                except:
+                    pass
+        else:
+            print('Error occured: {0}'.format(msg.error().str()))
+
+    except KeyboardInterrupt:
+        pass
+
+    finally:
+        consumer.close()
+    return
 
 
 def run(key):
@@ -47,7 +87,7 @@ def run(key):
     return 
     
 
-def Main():
+def bulkrun():
     try:
         
         worker_data =  mySQL_read()    
@@ -69,7 +109,7 @@ def mySQL_read():
     	  database= config['mysql']['database']
     	)
         mycursor = mydb.cursor()
-        mycursor.execute("SELECT user_reg_id,company_domain FROM registered_user")
+        mycursor.execute("SELECT company_domain, domain_id from login.client_domains")
         #mycursor.execute("SELECT user_reg_id,company_domain FROM registered_user limit 0,5")
         row = mycursor.fetchone()
         while row is not None:
@@ -145,8 +185,8 @@ def msd(data):
                                        username=config['mongodb']['username'],
                                        password=config['mongodb']['password'],
                                        authSource=config['mongodb']['authSource'])
-        db = client.linkcheckerDb
-        collection = db.DomainExpiry
+        db = client.check
+        collection = db.DomainExpiry12345
         x=data
         #collection.insert(x)
         collection.update({'_id': x['_id']},{'$set':x}, upsert=True, multi=False)
